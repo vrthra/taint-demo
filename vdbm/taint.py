@@ -4,23 +4,16 @@ import functools
 import collections
 
 class tstr(str):
-    def __new__(cls, value, taint=True):
+    def __new__(cls, value):
         s = str.__new__(cls, value)
-        s._taint = taint
+        s._s = value
         return s
 
-    def __radd__(self, other):
-        return tstr(str.__add__(other, self), self._taint)
+    def __radd__(self, o): return tstr(str.__add__(o, self))
 
-    def __repr__(self):
-        return self.__class__.__name__ + str.__repr__(self) + " " + str(self.tainted())
+    def __repr__(self): return 'Tainted: ' + str.__repr__(self)
 
-    def tainted(self):
-        return self._taint
-
-    def untaint(self):
-        self._taint = False
-        return self
+    def untaint(self): return self._s
 
 def mark(module):
     for name in dir(module):
@@ -32,8 +25,7 @@ def sink(func):
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         for e in (list(args) + list(kwargs.values())):
-           if isinstance(e, tstr) and e._taint:
-              raise Exception("tainted: %s" % e._taint)
+            if isinstance(e, tstr): raise Exception("tainted")
         return func(*args, **kwargs)
     return wrapper
 
@@ -49,17 +41,30 @@ def mark_sinks(module):
     for (module, name, obj) in mark(module):
         setattr(module, name, sink(obj))
 
+def make_strtuple_wrapper(fun):
+    def proxy(*a, **kw): return tuple(tstr(l) for l in fun(*a, **kw))
+    return 
+
+def make_strlst_wrapper(fun):
+    def proxy(*a, **kw): return [tstr(l) for l in fun(*a, **kw)]
+    return proxy
+
 def make_str_wrapper(fun):
-    def proxy(*args, **kwargs):
-        res = fun(*args, **kwargs)
-        if res.__class__ == str:
-            return tstr(res, args[0]._taint)
-        return res
+    def proxy(*a, **kw): return tstr(fun(*a, **kw))
     return proxy
 
 for name, fn in inspect.getmembers(str, callable):
-    if name not in ['__class__', '__new__', '__init__']:
+    tuple_names = ['partition', 'rpartition']
+    bool_names = ['__eq__', '__lt__', '__gt__', '__contains__']
+    list_names = ['rsplit', 'splitlines', 'split']
+    repr_names =  ['__repr__', '__str__', '__hash__']
+    if name not in ['__class__', '__new__', '__init__', '__getattribute__',
+            '__init_subclass__', '__subclasshook__', '__setattr__',
+            '__len__', 'find', 'rfind', '__iter__'
+            ] + tuple_names + list_names + bool_names + repr_names:
         setattr(tstr, name, make_str_wrapper(fn))
+    elif name in list_names: setattr(tstr, name, make_strlst_wrapper(fn))
+    elif name in tuple_names: setattr(tstr, name, make_strtuple_wrapper(fn))
 
 def source(func):
     @functools.wraps(func)
