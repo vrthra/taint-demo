@@ -1,0 +1,3 @@
+'hello', (0, 5)
+'www.python.org', (512, 14)
+os.system("ls"), (1024, 18)
